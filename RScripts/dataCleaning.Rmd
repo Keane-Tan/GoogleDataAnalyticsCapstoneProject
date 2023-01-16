@@ -1,0 +1,175 @@
+---
+title: "dataExploration"
+output: html_document
+date: "2022-12-22"
+---
+## Cleaning Tasks
+* Run a loop over all the files to check and make sure everything does not have nans. If there is nans, find a way to work with the nans.
+* Check that the individual entries in each column make sense. 
+* Run a loop over all the files to switch the date time format. That seems to be giving big Query some issue.
+
+## Data Exploration
+
+Here we are trying to understand what kind of information is contained in each csv file, because some of them cannot be uploaded to BigQuery.
+
+## Loading useful libraries
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+The files that we can read are:
+dailyActivity_merged.csv
+dailyCalories_merged.csv
+dailyIntensities_merged.csv
+dailySteps_merged.csv
+heartrate_seconds_merged.csv
+hourlyCalories_merged.csv
+hourlyIntensities_merged.csv
+hourlySteps_merged.csv
+minuteCaloriesNarrow_merged.csv
+minuteCaloriesWide_merged.csv
+minuteIntensitiesNarrow_merged.csv
+minuteIntensitiesWide_merged.csv
+minuteMETsNarrow_merged.csv
+minuteSleep_merged.csv
+minuteStepsNarrow_merged.csv
+minuteStepsWide_merged.csv
+sleepDay_merged.csv
+weightLogInfo_merged.csv
+
+Since we are going to keep all the csv files in one place, we will use the same input folder for all of them. The function below makes it easy to create a dataframe based on the name of the input csv file.
+```{r}
+makeDf <- function(inFile){
+  inFolder <- "C:/Users/chinl/OneDrive/Desktop/Keane/20221222_GoogleAnalyticCapstone/Fitabase Data 4.12.16-5.12.16"
+  fullInFile <- sprintf("%s.csv",inFile)
+  pathToInFile <- sprintf("%s/%s",inFolder,fullInFile)
+  print(pathToInFile)
+  return(read_csv(pathToInFile))
+}
+
+saveDf <- function(newdf,inFile){
+  inFolder <- "C:/Users/chinl/OneDrive/Desktop/Keane/20221222_GoogleAnalyticCapstone/Fitabase Data 4.12.16-5.12.16"
+  newFileName <- sprintf("%s_updated.csv",inFile)
+  pathToNewFile <- sprintf("%s/%s",inFolder,newFileName)
+  write.csv(newdf,pathToNewFile,row.names=FALSE)
+  return(str_replace(newFileName,".csv",""))
+}
+```
+
+## Checking for NANs
+
+The following section is for running over all the files and check for NANs in each file.
+```{r}
+allFiles <- c("dailyActivity_merged",
+"dailyCalories_merged",
+"dailyIntensities_merged",
+"dailySteps_merged",
+"heartrate_seconds_merged",
+"hourlyCalories_merged",
+"hourlyIntensities_merged",
+"hourlySteps_merged",
+"minuteCaloriesNarrow_merged",
+"minuteCaloriesWide_merged",
+"minuteIntensitiesNarrow_merged",
+"minuteIntensitiesWide_merged",
+"minuteMETsNarrow_merged",
+"minuteSleep_merged",
+"minuteStepsNarrow_merged",
+"minuteStepsWide_merged",
+"sleepDay_merged",
+"weightLogInfo_merged")
+
+for(inFile in allFiles){
+  print(inFile)
+  df <- makeDf(inFile)
+  if(length(which(is.na(df))) == 0){
+    print("No NANs found")
+  }else{
+    print(which(is.na(df),arr.ind=TRUE))
+  }
+}
+```
+Judging from the output, only "weightLogInfo_merged" has several entries, and all these entries came from the same column - column 5.
+
+```{r}
+df <- makeDf("weightLogInfo_merged")
+```
+
+Looking at the output above, all the rows in the table that return nans only contain nans for all the columns. Since there is not much to work with here, we can probably remove these rows for the analysis.
+
+Before we do that, let's look at the other rows in the table to see what they look like.
+
+```{r}
+str(df)
+```
+```{r}
+head(df)
+```
+
+From both the outputs of str() and head(), we see that indeed it is column 5 (Fat) that contains nans. Since there are only 67 rows in each column, and there are 65 rows with nans in this column, we can probably just ignore this column, since we do not have enough information to replace the nans. 
+
+```{r}
+newdf <- df %>% 
+  mutate(Fat=NULL)
+head(newdf)
+saveDf(newdf,"weightLogInfo_merged")
+```
+
+Since we have updated the weightLogInfo_merged csv file, we should update the allFiles variable that we are going to use in the following section, so that whatever changes we made here will also be kept in this final version of the weightLogInfo_merged file after we make changes in the next section.
+
+```{r}
+allFiles <- replace(allFiles, allFiles=="weightLogInfo_merged","weightLogInfo_merged_updated") 
+print(allFiles)
+```
+## Removing Duplicates
+```{r}
+newAllFiles <- c()
+for(inFile in allFiles){
+  print(inFile)
+  df <- makeDf(inFile)
+  newdf <- distinct(df)
+  newFileName <- saveDf(newdf,inFile)
+  newAllFiles <- append(newAllFiles,newFileName)
+}
+allFiles <- newAllFiles
+print(allFiles)
+```
+## Converting Dates to Proper Format
+
+Apparently BigQuery will throw an error like the following:
+```
+Failed to create table: Error while reading data, error message: Could not parse '4/12/2016 12:00:00 AM' as TIMESTAMP for field ActivityHour (position 1) starting at location 49 with message 'Invalid time zone: AM
+```
+if we try to upload files with datetime in the format: M/D/YYYY HH:MM:SS. Thus, in this section, we will convert all these datetimes to the standard format provided by lubridate.
+
+First, we need to identify which column(s) contains datetimes.
+```{r}
+for(inFile in allFiles){
+  print(inFile)
+  df <- makeDf(inFile)
+  glimpse(df)
+}
+```
+From the outputs above, we see that columns with names such as "Time", "ActivityHour", "ActivityMinute", "date", "Date", and "SleepDay" contain datetime information. All these columns need to be converted properly before we can upload them to BigQuery.
+```{r}
+for(inFile in allFiles){
+  print(inFile)
+  df <- makeDf(inFile)
+  dateTimeColumns <- c("ActivityHour","ActivityMinute","date","Date","SleepDay","Time")
+  dateColumnName = ""
+  for(colname in colnames(df)){
+    if(length(which(str_detect(dateTimeColumns, colname))) != 0){
+      betterDateTime <- mdy_hms(df %>% pull(colname))
+      dateColumnName <- colname
+    }
+  #if(needToModifyDate){
+  #  saveDf(newdf,inFile)
+  #}
+  }
+  print(dateColumnName)
+  if(dateColumnName != ""){
+    df[dateColumnName] = betterDateTime
+    saveDf(df,inFile)
+  }
+}
+```

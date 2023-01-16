@@ -1,0 +1,78 @@
+---
+title: "analysis"
+output: html_document
+date: "2022-12-30"
+---
+
+## Loading Libraries
+```{r}
+library(tidyverse)
+library(ggplot2)
+#install.packages("ggcorrplot")
+library(ggcorrplot)
+```
+
+## Defining functions
+```{r}
+makeDf <- function(inFile){
+  inFolder <- "C:/Users/chinl/OneDrive/Desktop/Keane/20221222_GoogleAnalyticCapstone/Fitabase Data 4.12.16-5.12.16"
+  fullInFile <- sprintf("%s.csv",inFile)
+  pathToInFile <- sprintf("%s/%s",inFolder,fullInFile)
+  print(pathToInFile)
+  return(read_csv(pathToInFile))
+}
+```
+
+## Calories vs Steps
+### Loading dataset
+```{r}
+df <- makeDf("dailyActivity_merged_updated")
+print(colnames(df))
+head(df)
+```
+### Finding Correlation
+```{r}
+corMat<- round(cor(mutate(df,ActivityDate=NULL,Id=NULL)),2) # the mutate function is there to remove date and Id as variables in the correlation function
+print(corMat)
+ggcorrplot(corMat,method="square") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+From the plot above, we see that TotalSteps, TotalDistance, and TrackerDistance are highly correlated to one another, which are fairly correlated to calories. We also see that active distance is correlated to active minutes. Interestingly, both light active distance and very active distance are more correlated to total distance than moderately active distance. This implies that users are either walking or running more intensely. Also, the negative correlation between sedentary minutes and lightly active minutes is the strongest, which may imply that when a participant is not sedentary, they are most likely engaged in some lightly active activity.
+
+### plotting Steps vs Dates
+```{r}
+df %>% 
+  ggplot(aes(x=ActivityDate,y=TotalSteps,color=factor(Id))) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  facet_wrap(~Id)
+```
+
+### plotting Calories vs Steps
+```{r}
+ggplot(data=df) +
+  geom_point(mapping=aes(x=TotalSteps,y=Calories,color=factor(Id)))
+```
+
+### plotting SedentaryMinutes vs LightlyActiveMinutes
+```{r}
+ggplot(data=df) +
+  geom_point(mapping=aes(x=SedentaryMinutes,y=LightlyActiveMinutes,color=factor(Id))) +
+  facet_wrap(~Id)
+```
+```{r}
+ggplot(data=df) +
+  geom_point(mapping=aes(x=VeryActiveMinutes,y=TotalSteps,color=factor(Id)))
+```
+## Heart rate 
+```{r}
+df <- makeDf("heartrate_seconds_merged_updated_updated")
+print(colnames(df))
+head(df)
+```
+```{r}
+df %>% 
+  filter(Id==4020332650) %>% 
+  ggplot() +
+  geom_point(mapping=aes(x=Time, y=Value))
+```
